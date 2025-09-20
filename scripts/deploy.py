@@ -70,7 +70,8 @@ def deploy_production_model():
         
         # Create SageMaker model
         model_name = f"delivery-eta-model-v{model_version.version}-{int(time.time())}"
-        container_image = "683313688378.dkr.ecr.ap-south-1.amazonaws.com/sagemaker-xgboost:1.7-1"
+        # Resolve correct XGBoost inference image for the region
+        container_image = sagemaker.image_uris.retrieve(framework="xgboost", region="ap-south-1", version="1.7-1")
         
         sm.create_model(
             ModelName=model_name,

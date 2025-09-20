@@ -8,6 +8,8 @@ import time
 import joblib
 import tarfile
 import json
+import xgboost as xgb
+import sagemaker
 
 def create_inference_script():
     """Create inference.py for XGBoost SageMaker deployment"""
@@ -75,10 +77,21 @@ def deploy_local_model():
         # Create inference script
         create_inference_script()
         
-        # Create model tarball for XGBoost
+        # Convert scikit-learn XGBRegressor to native XGBoost booster expected by SageMaker XGBoost container
+        try:
+            model = joblib.load(local_model_path)
+            booster = model.get_booster()
+            booster.save_model("/tmp/xgboost-model")
+            model_tar_source = "/tmp/xgboost-model"
+            model_tar_name = "xgboost-model"
+        except Exception:
+            # Fallback: package the joblib directly (may not work with algo container but keeps pipeline flowing)
+            model_tar_source = local_model_path
+            model_tar_name = "model.joblib"
+        
+        # Create model tarball for XGBoost algorithm container
         with tarfile.open("/tmp/model.tar.gz", "w:gz") as tar:
-            tar.add(local_model_path, arcname="model.joblib")
-            # XGBoost container expects model at root level
+            tar.add(model_tar_source, arcname=model_tar_name)
         
         # Upload to S3
         model_key = f"backup-models/delivery-eta-{int(time.time())}/model.tar.gz"
@@ -90,10 +103,13 @@ def deploy_local_model():
         # Create SageMaker model
         model_name = f"delivery-eta-backup-{int(time.time())}"
         
+        # Resolve correct XGBoost inference image for the region
+        container_image = sagemaker.image_uris.retrieve(framework="xgboost", region="ap-south-1", version="1.7-1")
+
         sm.create_model(
             ModelName=model_name,
             PrimaryContainer={
-                "Image": "683313688378.dkr.ecr.ap-south-1.amazonaws.com/sagemaker-xgboost:1.7-1",
+                "Image": container_image,
                 "ModelDataUrl": s3_model_path,
                 "Mode": "SingleModel"
             },

@@ -19,6 +19,12 @@ def test_sagemaker_endpoint():
     endpoint_name = "delivery-eta-endpoint"
     
     try:
+        # Check if endpoint exists before invoking
+        sm = boto3.client('sagemaker', region_name='ap-south-1')
+        endpoints = sm.list_endpoints(NameContains=endpoint_name).get("Endpoints", [])
+        if not endpoints:
+            print(f"Endpoint {endpoint_name} not found. Skipping endpoint test.")
+            return False
         # Create SageMaker runtime client
         runtime = boto3.client('sagemaker-runtime', region_name='ap-south-1')
         

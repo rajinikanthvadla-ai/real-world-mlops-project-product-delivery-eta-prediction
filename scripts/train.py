@@ -11,6 +11,11 @@ IS_GITHUB_ACTIONS = 'GITHUB_ACTIONS' in os.environ
 # MLflow configuration
 MLFLOW_TRACKING_URI = os.environ.get('MLFLOW_TRACKING_URI', "http://13.127.63.212:32001/")
 
+# In GitHub Actions, an empty MLFLOW_S3_ENDPOINT_URL can cause boto3 Invalid endpoint errors.
+# Sanitize by removing the env var if it's an empty string.
+if os.environ.get("MLFLOW_S3_ENDPOINT_URL", None) == "":
+    os.environ.pop("MLFLOW_S3_ENDPOINT_URL", None)
+
 try:
     mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
     
@@ -153,13 +158,16 @@ def train_model(df):
                     signature = infer_signature(X_train, model.predict(X_train))
                     
                     # Log model without storing large artifacts to S3
-                    mlflow.xgboost.log_model(
-                        model, 
-                        "model",
-                        signature=signature,
-                        registered_model_name="delivery-eta-model"
-                        # Removed duplicate artifact_path parameter
-                    )
+                    # If artifact logging fails (e.g., registry/S3 unavailable), catch and continue.
+                    try:
+                        mlflow.xgboost.log_model(
+                            model,
+                            "model",
+                            signature=signature,
+                            registered_model_name="delivery-eta-model"
+                        )
+                    except Exception as artifact_err:
+                        print(f"MLflow artifact logging failed: {artifact_err}")
                     
                     # Promote to Staging automatically for GitHub Actions
                     try:

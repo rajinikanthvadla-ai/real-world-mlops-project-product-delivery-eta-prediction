@@ -13,8 +13,6 @@ jobs:
     runs-on: ubuntu-latest
     env:
       MLFLOW_TRACKING_URI: http://13.127.63.212:32001/
-      # Disable MLflow S3 artifact logging to avoid permission issues
-      MLFLOW_S3_ENDPOINT_URL: ""
       AWS_DEFAULT_REGION: ap-south-1
     
     steps:
@@ -71,6 +69,6 @@ jobs:
     - name: Test Deployed Model
       run: |
         echo "Testing deployed model..."
-        sleep 30  # Wait for endpoint to be ready
+        sleep 30  # Wait for endpoint to be ready if created
         python test_api.py
         echo "Model testing completed"
