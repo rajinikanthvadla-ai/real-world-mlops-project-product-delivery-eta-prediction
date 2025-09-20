@@ -2,7 +2,7 @@ import boto3, mlflow, os, time
 import sagemaker
 from sagemaker.model import Model
 from sagemaker.predictor import Predictor
-from sagemaker.xgboost.model import XGBoostModel
+from sagemaker.sklearn.model import SKLearnModel
 
 MLFLOW_TRACKING_URI="http://13.127.63.212:32001/"
 mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
@@ -93,24 +93,40 @@ def deploy_production_model():
         s3_model_path = f"s3://{bucket}/models/delivery-eta-v{model_version.version}/model.tar.gz"
         boto3.client("s3").upload_file("/tmp/model.tar.gz", bucket, f"models/delivery-eta-v{model_version.version}/model.tar.gz")
         
-        # Use script-mode XGBoostModel with a minimal inference.py
+        # Use script-mode SKLearnModel with a minimal inference.py to load joblib
         # Create an inference script in /tmp and include with model by pointing entry_point
         infer_code = '''
 import os
-import joblib
-import pandas as pd
+import xgboost as xgb
+import numpy as np
+
+FEATURES = ['product_weight_g','product_volume_cm3','price','freight_value','purchase_hour','purchase_day_of_week','purchase_month']
 
 def model_fn(model_dir):
-    return joblib.load(os.path.join(model_dir, "model.joblib"))
+    booster = xgb.Booster()
+    # Try booster first, fallback to joblib if needed
+    path_booster = os.path.join(model_dir, 'xgboost-model')
+    if os.path.exists(path_booster):
+        booster.load_model(path_booster)
+        return booster
+    import joblib, pandas as pd
+    model = joblib.load(os.path.join(model_dir, 'model.joblib'))
+    return model
 
 def input_fn(request_body, request_content_type):
-    if request_content_type == "text/csv":
+    if request_content_type == 'text/csv':
         values = [float(x.strip()) for x in request_body.split(',')]
-        cols = ['product_weight_g','product_volume_cm3','price','freight_value','purchase_hour','purchase_day_of_week','purchase_month']
-        return pd.DataFrame([values], columns=cols)
-    raise ValueError(f"Unsupported content type: {request_content_type}")
+        try:
+            import pandas as pd
+            return pd.DataFrame([values], columns=FEATURES)
+        except Exception:
+            return np.array(values, dtype=np.float32).reshape(1, -1)
+    raise ValueError(f'Unsupported content type: {request_content_type}')
 
 def predict_fn(data, model):
+    if isinstance(model, xgb.Booster):
+        dmatrix = xgb.DMatrix(data, feature_names=FEATURES)
+        return model.predict(dmatrix)
     return model.predict(data)
 
 def output_fn(prediction, content_type):
@@ -120,11 +136,11 @@ def output_fn(prediction, content_type):
             f.write(infer_code)
 
         sagemaker_session = sagemaker.Session()
-        xgb_model = XGBoostModel(
+        skl_model = SKLearnModel(
             model_data=s3_model_path,
             role=role,
             entry_point='/tmp/inference.py',
-            framework_version='1.7-1',
+            framework_version='1.2-1',
             py_version='py3',
             sagemaker_session=sagemaker_session
         )
@@ -153,21 +169,21 @@ def output_fn(prediction, content_type):
                         break
                     _t.sleep(10)
                 print(f"Creating new endpoint: {endpoint_name}")
-                xgb_model.deploy(
+                skl_model.deploy(
                     initial_instance_count=1,
                     instance_type='ml.t2.medium',
                     endpoint_name=endpoint_name
                 )
             else:
                 print(f"Updating existing endpoint: {endpoint_name}")
-                xgb_model.deploy(
+                skl_model.deploy(
                     initial_instance_count=1,
                     instance_type='ml.t2.medium',
                     endpoint_name=endpoint_name
                 )
         else:
             print(f"Creating new endpoint: {endpoint_name}")
-            xgb_model.deploy(
+            skl_model.deploy(
                 initial_instance_count=1,
                 instance_type='ml.t2.medium',
                 endpoint_name=endpoint_name

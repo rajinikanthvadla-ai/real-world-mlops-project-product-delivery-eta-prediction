@@ -10,43 +10,35 @@ import tarfile
 import json
 import xgboost as xgb
 import sagemaker
-from sagemaker.xgboost.model import XGBoostModel
+from sagemaker.sklearn.model import SKLearnModel
 
 def create_inference_script():
     """Create inference.py for XGBoost SageMaker deployment"""
     inference_code = '''
-import xgboost as xgb
-import pandas as pd
 import os
-import io
+import xgboost as xgb
+import numpy as np
+
+FEATURES = ['product_weight_g','product_volume_cm3','price','freight_value',
+            'purchase_hour','purchase_day_of_week','purchase_month']
 
 def model_fn(model_dir):
-    """Load XGBoost model"""
-    model_path = os.path.join(model_dir, "model.joblib")
-    import joblib
-    model = joblib.load(model_path)
-    return model
+    booster = xgb.Booster()
+    booster.load_model(os.path.join(model_dir, 'xgboost-model'))
+    return booster
 
 def input_fn(request_body, request_content_type):
-    """Parse input data for XGBoost"""
-    if request_content_type == "text/csv":
-        # Parse CSV input - expecting comma-separated values
+    if request_content_type == 'text/csv':
         values = [float(x.strip()) for x in request_body.split(',')]
-        features = ['product_weight_g','product_volume_cm3','price','freight_value',
-                   'purchase_hour','purchase_day_of_week','purchase_month']
-        df = pd.DataFrame([values], columns=features)
-        return df
-    else:
-        raise ValueError(f"Unsupported content type: {request_content_type}")
+        return np.array(values, dtype=np.float32).reshape(1, -1)
+    raise ValueError(f'Unsupported content type: {request_content_type}')
 
-def predict_fn(input_data, model):
-    """Make predictions"""
-    predictions = model.predict(input_data)
-    return predictions
+def predict_fn(data, booster):
+    dmatrix = xgb.DMatrix(data, feature_names=FEATURES)
+    return booster.predict(dmatrix)
 
 def output_fn(prediction, content_type):
-    """Format output"""
-    return str(prediction[0])
+    return str(float(prediction[0]))
 '''
     
     with open("/tmp/inference.py", "w") as f:
@@ -118,9 +110,17 @@ def deploy_local_model():
         # Create inference script
         create_inference_script()
         
-        # Package the trained model as joblib for script-mode inference
-        model_tar_source = local_model_path
-        model_tar_name = "model.joblib"
+        # Save a native XGBoost booster expected by algorithm or script
+        try:
+            model = joblib.load(local_model_path)
+            booster = model.get_booster()
+            booster.save_model("/tmp/xgboost-model")
+            model_tar_source = "/tmp/xgboost-model"
+            model_tar_name = "xgboost-model"
+        except Exception:
+            # Fallback to joblib if booster unavailable
+            model_tar_source = local_model_path
+            model_tar_name = "model.joblib"
         
         # Create model tarball
         with tarfile.open("/tmp/model.tar.gz", "w:gz") as tar:
@@ -136,13 +136,13 @@ def deploy_local_model():
         # Create SageMaker model
         model_name = f"delivery-eta-backup-{int(time.time())}"
         
-        # Create XGBoostModel in script mode using our inference.py
+        # Create SKLearnModel in script mode using our inference.py (works with joblib)
         sagemaker_session = sagemaker.Session()
-        xgb_model = XGBoostModel(
+        skl_model = SKLearnModel(
             model_data=s3_model_path,
             role=role,
             entry_point="/tmp/inference.py",
-            framework_version="1.7-1",
+            framework_version="1.2-1",
             py_version="py3",
             sagemaker_session=sagemaker_session
         )
@@ -172,21 +172,21 @@ def deploy_local_model():
                         break
                     _t.sleep(10)
                 print(f"Creating endpoint: {endpoint_name}")
-                xgb_model.deploy(
+                skl_model.deploy(
                     initial_instance_count=1,
                     instance_type="ml.t2.medium",
                     endpoint_name=endpoint_name
                 )
             else:
                 print(f"Updating endpoint: {endpoint_name}")
-                xgb_model.deploy(
+                skl_model.deploy(
                     initial_instance_count=1,
                     instance_type="ml.t2.medium",
                     endpoint_name=endpoint_name
                 )
         else:
             print(f"Creating endpoint: {endpoint_name}")
-            xgb_model.deploy(
+            skl_model.deploy(
                 initial_instance_count=1,
                 instance_type="ml.t2.medium",
                 endpoint_name=endpoint_name
