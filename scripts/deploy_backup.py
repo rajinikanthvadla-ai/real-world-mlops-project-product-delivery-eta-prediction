@@ -147,6 +147,14 @@ def deploy_local_model():
             sagemaker_session=sagemaker_session
         )
         
+        # Ensure stale default-named endpoint-config is removed to avoid name conflict
+        try:
+            sm.describe_endpoint_config(EndpointConfigName=endpoint_name)
+            print(f"Found stale endpoint-config {endpoint_name}, deleting it before deploy...")
+            sm.delete_endpoint_config(EndpointConfigName=endpoint_name)
+        except Exception:
+            pass
+
         # Deploy endpoint
         endpoint_name = "delivery-eta-endpoint"
         existing_endpoints = sm.list_endpoints(NameContains=endpoint_name).get("Endpoints", [])
