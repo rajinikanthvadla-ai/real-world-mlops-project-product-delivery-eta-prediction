@@ -10,59 +10,45 @@ import tarfile
 import json
 
 def create_inference_script():
-    """Create inference.py for SageMaker deployment"""
+    """Create inference.py for XGBoost SageMaker deployment"""
     inference_code = '''
-import joblib
-import json
-import os
+import xgboost as xgb
 import pandas as pd
+import os
+import io
 
 def model_fn(model_dir):
-    """Load model for inference"""
+    """Load XGBoost model"""
     model_path = os.path.join(model_dir, "model.joblib")
-    return joblib.load(model_path)
+    import joblib
+    model = joblib.load(model_path)
+    return model
 
 def input_fn(request_body, request_content_type):
-    """Parse input data"""
-    if request_content_type == "application/json":
-        data = json.loads(request_body)
-        return data
-    elif request_content_type == "text/csv":
-        # Parse CSV input
+    """Parse input data for XGBoost"""
+    if request_content_type == "text/csv":
+        # Parse CSV input - expecting comma-separated values
+        values = [float(x.strip()) for x in request_body.split(',')]
         features = ['product_weight_g','product_volume_cm3','price','freight_value',
                    'purchase_hour','purchase_day_of_week','purchase_month']
-        values = [float(x.strip()) for x in request_body.split(',')]
-        return dict(zip(features, values))
+        df = pd.DataFrame([values], columns=features)
+        return df
     else:
         raise ValueError(f"Unsupported content type: {request_content_type}")
 
 def predict_fn(input_data, model):
     """Make predictions"""
-    # Expected features
-    features = ['product_weight_g','product_volume_cm3','price','freight_value',
-                'purchase_hour','purchase_day_of_week','purchase_month']
-    
-    # Convert to DataFrame
-    if isinstance(input_data, dict):
-        df = pd.DataFrame([input_data])
-    else:
-        df = pd.DataFrame(input_data)
-    
-    # Make prediction
-    predictions = model.predict(df[features])
-    return predictions.tolist()
+    predictions = model.predict(input_data)
+    return predictions
 
 def output_fn(prediction, content_type):
     """Format output"""
-    if content_type == "application/json":
-        return json.dumps({"predictions": prediction})
-    else:
-        return str(prediction[0])  # Return single value for CSV
+    return str(prediction[0])
 '''
     
     with open("/tmp/inference.py", "w") as f:
         f.write(inference_code)
-    print("Created inference.py")
+    print("Created XGBoost inference.py")
 
 def deploy_local_model():
     """Deploy locally saved model to SageMaker"""
@@ -89,10 +75,10 @@ def deploy_local_model():
         # Create inference script
         create_inference_script()
         
-        # Create model tarball
+        # Create model tarball for XGBoost
         with tarfile.open("/tmp/model.tar.gz", "w:gz") as tar:
             tar.add(local_model_path, arcname="model.joblib")
-            tar.add("/tmp/inference.py", arcname="code/inference.py")
+            # XGBoost container expects model at root level
         
         # Upload to S3
         model_key = f"backup-models/delivery-eta-{int(time.time())}/model.tar.gz"
@@ -107,12 +93,9 @@ def deploy_local_model():
         sm.create_model(
             ModelName=model_name,
             PrimaryContainer={
-                "Image": "763104351884.dkr.ecr.ap-south-1.amazonaws.com/sklearn-inference:1.0-1-cpu-py3",  # AWS managed container
+                "Image": "683313688378.dkr.ecr.ap-south-1.amazonaws.com/sagemaker-xgboost:1.7-1",
                 "ModelDataUrl": s3_model_path,
-                "Environment": {
-                    "SAGEMAKER_PROGRAM": "inference.py",
-                    "SAGEMAKER_SUBMIT_DIRECTORY": "/opt/ml/code"
-                }
+                "Mode": "SingleModel"
             },
             ExecutionRoleArn=role
         )

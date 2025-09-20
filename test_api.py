@@ -22,42 +22,24 @@ def test_sagemaker_endpoint():
         # Create SageMaker runtime client
         runtime = boto3.client('sagemaker-runtime', region_name='ap-south-1')
         
-        # Try different content types
-        try:
-            # Try JSON first (for scikit-learn container)
-            payload = json.dumps(test_data)
-            
-            print(f"Test Data: {test_data}")
-            print(f"Invoking endpoint: {endpoint_name} (JSON)")
-            
-            response = runtime.invoke_endpoint(
-                EndpointName=endpoint_name,
-                ContentType='application/json',
-                Body=payload
-            )
-            
-            result = json.loads(response['Body'].read().decode())
-            print(f"JSON prediction successful!")
-            print(f"Predicted delivery time: {result['predictions'][0]:.2f} days")
-            
-        except Exception as json_error:
-            print(f"JSON failed: {json_error}")
-            print("Trying CSV format...")
-            
-            # Try CSV format (for XGBoost container)
-            features = ['product_weight_g','product_volume_cm3','price','freight_value',
-                       'purchase_hour','purchase_day_of_week','purchase_month']
-            csv_input = ",".join(str(test_data[f]) for f in features)
-            
-            response = runtime.invoke_endpoint(
-                EndpointName=endpoint_name,
-                ContentType="text/csv",
-                Body=csv_input
-            )
-            
-            result = response["Body"].read().decode("utf-8").strip()
-            print(f"CSV prediction successful!")
-            print(f"Predicted delivery time: {float(result):.2f} days")
+        # XGBoost container expects CSV format
+        features = ['product_weight_g','product_volume_cm3','price','freight_value',
+                   'purchase_hour','purchase_day_of_week','purchase_month']
+        csv_input = ",".join(str(test_data[f]) for f in features)
+        
+        print(f"Test Data: {test_data}")
+        print(f"Invoking endpoint: {endpoint_name} (CSV)")
+        print(f"CSV Input: {csv_input}")
+        
+        response = runtime.invoke_endpoint(
+            EndpointName=endpoint_name,
+            ContentType="text/csv",
+            Body=csv_input
+        )
+        
+        result = response["Body"].read().decode("utf-8").strip()
+        print(f"CSV prediction successful!")
+        print(f"Predicted delivery time: {float(result):.2f} days")
         
         return True
         

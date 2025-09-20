@@ -17,7 +17,7 @@ except ValueError:
     # GitHub Actions or local environment
     account = boto3.client("sts").get_caller_identity()["Account"]
     role = f"arn:aws:iam::{account}:role/service-role/AmazonSageMaker-ExecutionRole"
-    print(f"🔧 Using IAM role: {role}")
+    print(f"Using IAM role: {role}")
 bucket="product-delivery-eta-model-artifacts"
 endpoint_name="delivery-eta-endpoint"
 
@@ -70,17 +70,14 @@ def deploy_production_model():
         
         # Create SageMaker model
         model_name = f"delivery-eta-model-v{model_version.version}-{int(time.time())}"
-        container_image = "246618743249.dkr.ecr.ap-south-1.amazonaws.com/sagemaker-xgboost:1.7-1"  # Public image
+        container_image = "683313688378.dkr.ecr.ap-south-1.amazonaws.com/sagemaker-xgboost:1.7-1"
         
         sm.create_model(
             ModelName=model_name,
             PrimaryContainer={
                 "Image": container_image,
                 "ModelDataUrl": s3_model_path,
-                "Environment": {
-                    "SAGEMAKER_PROGRAM": "inference.py",
-                    "SAGEMAKER_SUBMIT_DIRECTORY": "/opt/ml/code"
-                }
+                "Mode": "SingleModel"
             },
             ExecutionRoleArn=role
         )
