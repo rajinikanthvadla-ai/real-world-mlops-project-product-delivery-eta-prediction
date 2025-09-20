@@ -2,6 +2,7 @@ import boto3, mlflow, os, time
 import sagemaker
 from sagemaker.model import Model
 from sagemaker.predictor import Predictor
+from sagemaker.xgboost.model import XGBoostModel
 
 MLFLOW_TRACKING_URI="http://13.127.63.212:32001/"
 mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
@@ -92,34 +93,40 @@ def deploy_production_model():
         s3_model_path = f"s3://{bucket}/models/delivery-eta-v{model_version.version}/model.tar.gz"
         boto3.client("s3").upload_file("/tmp/model.tar.gz", bucket, f"models/delivery-eta-v{model_version.version}/model.tar.gz")
         
-        # Create SageMaker model
-        model_name = f"delivery-eta-model-v{model_version.version}-{int(time.time())}"
-        # Resolve correct XGBoost inference image for the region
-        container_image = sagemaker.image_uris.retrieve(framework="xgboost", region="ap-south-1", version="1.7-1")
-        
-        sm.create_model(
-            ModelName=model_name,
-            PrimaryContainer={
-                "Image": container_image,
-                "ModelDataUrl": s3_model_path,
-                "Mode": "SingleModel"
-            },
-            ExecutionRoleArn=role
-        )
-        
-        # Create endpoint configuration
-        config_name = f"{model_name}-config"
-        sm.create_endpoint_config(
-            EndpointConfigName=config_name,
-            ProductionVariants=[
-                {
-                    "VariantName": "AllTraffic",
-                    "ModelName": model_name,
-                    "InitialInstanceCount": 1,
-                    "InstanceType": "ml.t2.medium",  # Cost-effective for demo
-                    "InitialVariantWeight": 1.0
-                }
-            ]
+        # Use script-mode XGBoostModel with a minimal inference.py
+        # Create an inference script in /tmp and include with model by pointing entry_point
+        infer_code = '''
+import os
+import joblib
+import pandas as pd
+
+def model_fn(model_dir):
+    return joblib.load(os.path.join(model_dir, "model.joblib"))
+
+def input_fn(request_body, request_content_type):
+    if request_content_type == "text/csv":
+        values = [float(x.strip()) for x in request_body.split(',')]
+        cols = ['product_weight_g','product_volume_cm3','price','freight_value','purchase_hour','purchase_day_of_week','purchase_month']
+        return pd.DataFrame([values], columns=cols)
+    raise ValueError(f"Unsupported content type: {request_content_type}")
+
+def predict_fn(data, model):
+    return model.predict(data)
+
+def output_fn(prediction, content_type):
+    return str(float(prediction[0]))
+'''
+        with open('/tmp/inference.py', 'w') as f:
+            f.write(infer_code)
+
+        sagemaker_session = sagemaker.Session()
+        xgb_model = XGBoostModel(
+            model_data=s3_model_path,
+            role=role,
+            entry_point='/tmp/inference.py',
+            framework_version='1.7-1',
+            py_version='py3',
+            sagemaker_session=sagemaker_session
         )
         
         # Deploy or update endpoint
@@ -146,28 +153,27 @@ def deploy_production_model():
                         break
                     _t.sleep(10)
                 print(f"Creating new endpoint: {endpoint_name}")
-                sm.create_endpoint(
-                    EndpointName=endpoint_name,
-                    EndpointConfigName=config_name
+                xgb_model.deploy(
+                    initial_instance_count=1,
+                    instance_type='ml.t2.medium',
+                    endpoint_name=endpoint_name
                 )
             else:
                 print(f"Updating existing endpoint: {endpoint_name}")
-                sm.update_endpoint(
-                    EndpointName=endpoint_name,
-                    EndpointConfigName=config_name
+                xgb_model.deploy(
+                    initial_instance_count=1,
+                    instance_type='ml.t2.medium',
+                    endpoint_name=endpoint_name
                 )
         else:
             print(f"Creating new endpoint: {endpoint_name}")
-            sm.create_endpoint(
-                EndpointName=endpoint_name,
-                EndpointConfigName=config_name
+            xgb_model.deploy(
+                initial_instance_count=1,
+                instance_type='ml.t2.medium',
+                endpoint_name=endpoint_name
             )
         
         # Wait for deployment
-        print("Waiting for endpoint deployment...")
-        waiter = sm.get_waiter('endpoint_in_service')
-        waiter.wait(EndpointName=endpoint_name)
-        
         print(f"Model v{model_version.version} deployed to SageMaker endpoint: {endpoint_name}")
         return True
         

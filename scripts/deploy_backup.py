@@ -10,6 +10,7 @@ import tarfile
 import json
 import xgboost as xgb
 import sagemaker
+from sagemaker.xgboost.model import XGBoostModel
 
 def create_inference_script():
     """Create inference.py for XGBoost SageMaker deployment"""
@@ -117,19 +118,11 @@ def deploy_local_model():
         # Create inference script
         create_inference_script()
         
-        # Convert scikit-learn XGBRegressor to native XGBoost booster expected by SageMaker XGBoost container
-        try:
-            model = joblib.load(local_model_path)
-            booster = model.get_booster()
-            booster.save_model("/tmp/xgboost-model")
-            model_tar_source = "/tmp/xgboost-model"
-            model_tar_name = "xgboost-model"
-        except Exception:
-            # Fallback: package the joblib directly (may not work with algo container but keeps pipeline flowing)
-            model_tar_source = local_model_path
-            model_tar_name = "model.joblib"
+        # Package the trained model as joblib for script-mode inference
+        model_tar_source = local_model_path
+        model_tar_name = "model.joblib"
         
-        # Create model tarball for XGBoost algorithm container
+        # Create model tarball
         with tarfile.open("/tmp/model.tar.gz", "w:gz") as tar:
             tar.add(model_tar_source, arcname=model_tar_name)
         
@@ -143,32 +136,15 @@ def deploy_local_model():
         # Create SageMaker model
         model_name = f"delivery-eta-backup-{int(time.time())}"
         
-        # Resolve correct XGBoost inference image for the region
-        container_image = sagemaker.image_uris.retrieve(framework="xgboost", region="ap-south-1", version="1.7-1")
-
-        sm.create_model(
-            ModelName=model_name,
-            PrimaryContainer={
-                "Image": container_image,
-                "ModelDataUrl": s3_model_path,
-                "Mode": "SingleModel"
-            },
-            ExecutionRoleArn=role
-        )
-        
-        # Create endpoint configuration
-        config_name = f"{model_name}-config"
-        sm.create_endpoint_config(
-            EndpointConfigName=config_name,
-            ProductionVariants=[
-                {
-                    "VariantName": "AllTraffic",
-                    "ModelName": model_name,
-                    "InitialInstanceCount": 1,
-                    "InstanceType": "ml.t2.medium",
-                    "InitialVariantWeight": 1.0
-                }
-            ]
+        # Create XGBoostModel in script mode using our inference.py
+        sagemaker_session = sagemaker.Session()
+        xgb_model = XGBoostModel(
+            model_data=s3_model_path,
+            role=role,
+            entry_point="/tmp/inference.py",
+            framework_version="1.7-1",
+            py_version="py3",
+            sagemaker_session=sagemaker_session
         )
         
         # Deploy endpoint
@@ -196,26 +172,25 @@ def deploy_local_model():
                         break
                     _t.sleep(10)
                 print(f"Creating endpoint: {endpoint_name}")
-                sm.create_endpoint(
-                    EndpointName=endpoint_name,
-                    EndpointConfigName=config_name
+                xgb_model.deploy(
+                    initial_instance_count=1,
+                    instance_type="ml.t2.medium",
+                    endpoint_name=endpoint_name
                 )
             else:
                 print(f"Updating endpoint: {endpoint_name}")
-                sm.update_endpoint(
-                    EndpointName=endpoint_name,
-                    EndpointConfigName=config_name
+                xgb_model.deploy(
+                    initial_instance_count=1,
+                    instance_type="ml.t2.medium",
+                    endpoint_name=endpoint_name
                 )
         else:
             print(f"Creating endpoint: {endpoint_name}")
-            sm.create_endpoint(
-                EndpointName=endpoint_name,
-                EndpointConfigName=config_name
+            xgb_model.deploy(
+                initial_instance_count=1,
+                instance_type="ml.t2.medium",
+                endpoint_name=endpoint_name
             )
-        
-        print("Waiting for deployment...")
-        waiter = sm.get_waiter('endpoint_in_service')
-        waiter.wait(EndpointName=endpoint_name)
         
         print(f"Backup model deployed to SageMaker endpoint: {endpoint_name}")
         return True
