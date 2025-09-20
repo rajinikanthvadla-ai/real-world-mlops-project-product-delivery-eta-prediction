@@ -2,7 +2,7 @@ import boto3, mlflow, os, time
 import sagemaker
 from sagemaker.model import Model
 from sagemaker.predictor import Predictor
-from sagemaker.sklearn.model import SKLearnModel
+from sagemaker.xgboost.model import XGBoostModel
 
 MLFLOW_TRACKING_URI="http://13.127.63.212:32001/"
 mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
@@ -93,7 +93,7 @@ def deploy_production_model():
         s3_model_path = f"s3://{bucket}/models/delivery-eta-v{model_version.version}/model.tar.gz"
         boto3.client("s3").upload_file("/tmp/model.tar.gz", bucket, f"models/delivery-eta-v{model_version.version}/model.tar.gz")
         
-        # Use script-mode SKLearnModel with a minimal inference.py to load joblib
+        # Use script-mode XGBoostModel with a minimal inference.py
         # Create an inference script in /tmp and include with model by pointing entry_point
         infer_code = '''
 import os
@@ -136,11 +136,11 @@ def output_fn(prediction, content_type):
             f.write(infer_code)
 
         sagemaker_session = sagemaker.Session()
-        skl_model = SKLearnModel(
+        skl_model = XGBoostModel(
             model_data=s3_model_path,
             role=role,
             entry_point='/tmp/inference.py',
-            framework_version='1.2-1',
+            framework_version='1.7-1',
             py_version='py3',
             sagemaker_session=sagemaker_session
         )
@@ -171,21 +171,21 @@ def output_fn(prediction, content_type):
                 print(f"Creating new endpoint: {endpoint_name}")
                 skl_model.deploy(
                     initial_instance_count=1,
-                    instance_type='ml.t2.medium',
+                    instance_type='ml.m5.large',
                     endpoint_name=endpoint_name
                 )
             else:
                 print(f"Updating existing endpoint: {endpoint_name}")
                 skl_model.deploy(
                     initial_instance_count=1,
-                    instance_type='ml.t2.medium',
+                    instance_type='ml.m5.large',
                     endpoint_name=endpoint_name
                 )
         else:
             print(f"Creating new endpoint: {endpoint_name}")
             skl_model.deploy(
                 initial_instance_count=1,
-                instance_type='ml.t2.medium',
+                instance_type='ml.m5.large',
                 endpoint_name=endpoint_name
             )
         

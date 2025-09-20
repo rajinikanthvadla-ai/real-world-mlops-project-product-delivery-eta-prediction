@@ -10,7 +10,7 @@ import tarfile
 import json
 import xgboost as xgb
 import sagemaker
-from sagemaker.sklearn.model import SKLearnModel
+from sagemaker.xgboost.model import XGBoostModel
 
 def create_inference_script():
     """Create inference.py for XGBoost SageMaker deployment"""
@@ -136,13 +136,13 @@ def deploy_local_model():
         # Create SageMaker model
         model_name = f"delivery-eta-backup-{int(time.time())}"
         
-        # Create SKLearnModel in script mode using our inference.py (works with joblib)
+        # Create XGBoostModel in script mode (xgboost is available in this image)
         sagemaker_session = sagemaker.Session()
-        skl_model = SKLearnModel(
+        xgb_model = XGBoostModel(
             model_data=s3_model_path,
             role=role,
             entry_point="/tmp/inference.py",
-            framework_version="1.2-1",
+            framework_version="1.7-1",
             py_version="py3",
             sagemaker_session=sagemaker_session
         )
@@ -172,23 +172,23 @@ def deploy_local_model():
                         break
                     _t.sleep(10)
                 print(f"Creating endpoint: {endpoint_name}")
-                skl_model.deploy(
+                xgb_model.deploy(
                     initial_instance_count=1,
-                    instance_type="ml.t2.medium",
+                    instance_type="ml.m5.large",
                     endpoint_name=endpoint_name
                 )
             else:
                 print(f"Updating endpoint: {endpoint_name}")
-                skl_model.deploy(
+                xgb_model.deploy(
                     initial_instance_count=1,
-                    instance_type="ml.t2.medium",
+                    instance_type="ml.m5.large",
                     endpoint_name=endpoint_name
                 )
         else:
             print(f"Creating endpoint: {endpoint_name}")
-            skl_model.deploy(
+            xgb_model.deploy(
                 initial_instance_count=1,
-                instance_type="ml.t2.medium",
+                instance_type="ml.m5.large",
                 endpoint_name=endpoint_name
             )
         

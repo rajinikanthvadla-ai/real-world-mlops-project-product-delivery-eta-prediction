@@ -66,10 +66,13 @@ jobs:
           python scripts/deploy_backup.py
           echo "Backup deployment completed"
         fi
+    - name: Wait for endpoint InService
+      run: |
+        echo "Waiting for SageMaker endpoint to be InService..."
+        aws sagemaker wait endpoint-in-service --endpoint-name delivery-eta-endpoint --region ap-south-1
     
     - name: Test Deployed Model
       run: |
         echo "Testing deployed model..."
-        sleep 30  # Wait for endpoint to be ready if created
         python test_api.py
         echo "Model testing completed"
