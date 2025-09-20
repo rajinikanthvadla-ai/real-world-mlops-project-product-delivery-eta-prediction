@@ -102,7 +102,7 @@ def deploy_local_model():
         sm.create_model(
             ModelName=model_name,
             PrimaryContainer={
-                "Image": "683313688378.dkr.ecr.ap-south-1.amazonaws.com/sagemaker-scikit-learn:1.0-1-cpu-py3",
+                "Image": "246618743249.dkr.ecr.ap-south-1.amazonaws.com/sagemaker-scikit-learn:1.0-1-cpu-py3",  # Public SageMaker image
                 "ModelDataUrl": s3_model_path,
                 "Environment": {
                     "SAGEMAKER_PROGRAM": "inference.py",

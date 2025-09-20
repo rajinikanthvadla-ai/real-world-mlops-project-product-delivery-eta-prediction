@@ -24,14 +24,22 @@ endpoint_name="delivery-eta-endpoint"
 def deploy_production_model():
     """Deploy the Production model from MLflow to SageMaker"""
     try:
-        # Get Production model from MLflow
-        prod_versions = client.get_latest_versions("delivery-eta-model", ["Production"])
+        # Check if model registry exists
+        try:
+            # Get Production model from MLflow
+            prod_versions = client.get_latest_versions("delivery-eta-model", ["Production"])
+        except Exception as registry_error:
+            print(f"⚠️ Model registry not accessible: {registry_error}")
+            print("💡 No models in registry. Use backup deployment instead.")
+            return False
+            
         if not prod_versions:
-            print("⚠️ No Production model found. Deploying latest Staging model...")
+            print("⚠️ No Production model found. Checking for Staging model...")
             staging_versions = client.get_latest_versions("delivery-eta-model", ["Staging"])
             if not staging_versions:
                 print("❌ No models found in Staging or Production")
-                return
+                print("💡 Use backup deployment with local model instead.")
+                return False
             model_version = staging_versions[0]
             # Promote to Production
             client.transition_model_version_stage(
@@ -39,6 +47,7 @@ def deploy_production_model():
                 model_version.version, 
                 "Production"
             )
+            print(f"✅ Promoted Staging v{model_version.version} to Production")
         else:
             model_version = prod_versions[0]
         
@@ -61,7 +70,7 @@ def deploy_production_model():
         
         # Create SageMaker model
         model_name = f"delivery-eta-model-v{model_version.version}-{int(time.time())}"
-        container_image = "683313688378.dkr.ecr.ap-south-1.amazonaws.com/sagemaker-xgboost:1.7-1"
+        container_image = "246618743249.dkr.ecr.ap-south-1.amazonaws.com/sagemaker-xgboost:1.7-1"  # Public image
         
         sm.create_model(
             ModelName=model_name,
@@ -113,11 +122,14 @@ def deploy_production_model():
         waiter.wait(EndpointName=endpoint_name)
         
         print(f"✅ Model v{model_version.version} deployed to SageMaker endpoint: {endpoint_name}")
-        return endpoint_name
+        return True
         
     except Exception as e:
         print(f"❌ Deployment failed: {str(e)}")
-        raise
+        return False
 
 if __name__ == "__main__":
-    deploy_production_model()
+    success = deploy_production_model()
+    if not success:
+        print("⚠️ MLflow deployment failed - use backup deployment")
+        exit(1)

@@ -157,9 +157,8 @@ def train_model(df):
                         model, 
                         "model",
                         signature=signature,
-                        registered_model_name="delivery-eta-model",
-                        # Use local artifact store to avoid S3 permissions
-                        artifact_path="model"
+                        registered_model_name="delivery-eta-model"
+                        # Removed duplicate artifact_path parameter
                     )
                     
                     # Promote to Staging automatically for GitHub Actions
