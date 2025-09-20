@@ -173,14 +173,39 @@ def deploy_local_model():
         
         # Deploy endpoint
         endpoint_name = "delivery-eta-endpoint"
-        existing_endpoints = sm.list_endpoints(NameContains=endpoint_name)["Endpoints"]
-        
+        existing_endpoints = sm.list_endpoints(NameContains=endpoint_name).get("Endpoints", [])
+
+        def _get_status(name: str) -> str:
+            try:
+                return sm.describe_endpoint(EndpointName=name).get("EndpointStatus", "Unknown")
+            except Exception:
+                return "NotFound"
+
         if existing_endpoints:
-            print(f"Updating endpoint: {endpoint_name}")
-            sm.update_endpoint(
-                EndpointName=endpoint_name,
-                EndpointConfigName=config_name
-            )
+            status = _get_status(endpoint_name)
+            if status in ["Failed", "OutOfService"]:
+                print(f"Existing endpoint is {status}. Deleting endpoint: {endpoint_name}")
+                try:
+                    sm.delete_endpoint(EndpointName=endpoint_name)
+                except Exception as _:
+                    pass
+                # Wait until it's gone
+                import time as _t
+                for _ in range(60):
+                    if _get_status(endpoint_name) == "NotFound":
+                        break
+                    _t.sleep(10)
+                print(f"Creating endpoint: {endpoint_name}")
+                sm.create_endpoint(
+                    EndpointName=endpoint_name,
+                    EndpointConfigName=config_name
+                )
+            else:
+                print(f"Updating endpoint: {endpoint_name}")
+                sm.update_endpoint(
+                    EndpointName=endpoint_name,
+                    EndpointConfigName=config_name
+                )
         else:
             print(f"Creating endpoint: {endpoint_name}")
             sm.create_endpoint(

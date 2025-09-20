@@ -123,14 +123,39 @@ def deploy_production_model():
         )
         
         # Deploy or update endpoint
-        existing_endpoints = sm.list_endpoints(NameContains=endpoint_name)["Endpoints"]
-        
+        existing_endpoints = sm.list_endpoints(NameContains=endpoint_name).get("Endpoints", [])
+
+        def _get_status(name: str) -> str:
+            try:
+                return sm.describe_endpoint(EndpointName=name).get("EndpointStatus", "Unknown")
+            except Exception:
+                return "NotFound"
+
         if existing_endpoints:
-            print(f"Updating existing endpoint: {endpoint_name}")
-            sm.update_endpoint(
-                EndpointName=endpoint_name,
-                EndpointConfigName=config_name
-            )
+            status = _get_status(endpoint_name)
+            if status in ["Failed", "OutOfService"]:
+                print(f"Existing endpoint is {status}. Deleting endpoint: {endpoint_name}")
+                try:
+                    sm.delete_endpoint(EndpointName=endpoint_name)
+                except Exception:
+                    pass
+                # Wait until deleted
+                import time as _t
+                for _ in range(60):
+                    if _get_status(endpoint_name) == "NotFound":
+                        break
+                    _t.sleep(10)
+                print(f"Creating new endpoint: {endpoint_name}")
+                sm.create_endpoint(
+                    EndpointName=endpoint_name,
+                    EndpointConfigName=config_name
+                )
+            else:
+                print(f"Updating existing endpoint: {endpoint_name}")
+                sm.update_endpoint(
+                    EndpointName=endpoint_name,
+                    EndpointConfigName=config_name
+                )
         else:
             print(f"Creating new endpoint: {endpoint_name}")
             sm.create_endpoint(
