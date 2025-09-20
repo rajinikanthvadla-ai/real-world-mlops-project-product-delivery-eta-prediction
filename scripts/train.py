@@ -29,14 +29,14 @@ try:
         experiments = client.list_experiments() 
     
     MLFLOW_AVAILABLE = True
-    print(f"✅ MLflow connected: {MLFLOW_TRACKING_URI}")
+    print(f"MLflow connected: {MLFLOW_TRACKING_URI}")
 except Exception as e:
-    print(f"⚠️ MLflow connection failed: {e}")
-    print(f"🔄 Continuing without MLflow tracking...")
+    print(f"MLflow connection failed: {e}")
+    print(f"Continuing without MLflow tracking...")
     MLFLOW_AVAILABLE = False
 
-print(f"🔧 Environment: {'SageMaker' if IS_SAGEMAKER else 'GitHub Actions' if IS_GITHUB_ACTIONS else 'Local'}")
-print(f"🔧 MLflow Tracking: {'Enabled' if MLFLOW_AVAILABLE else 'Disabled'}")
+print(f"Environment: {'SageMaker' if IS_SAGEMAKER else 'GitHub Actions' if IS_GITHUB_ACTIONS else 'Local'}")
+print(f"MLflow Tracking: {'Enabled' if MLFLOW_AVAILABLE else 'Disabled'}")
 
 s3 = boto3.client("s3")
 bucket_processed = "product-delivery-eta-processed-data"
@@ -47,11 +47,11 @@ local_path = "/tmp/processed_data.csv"
 # Step 1: Try downloading processed data
 try:
     s3.download_file(bucket_processed, key_processed, local_path)
-    print("✅ Loaded processed data from S3")
+    print("Loaded processed data from S3")
     df = pd.read_csv(local_path)
 
 except Exception as e:
-    print("⚠️ Processed data not found in S3. Building from raw dataset...")
+    print("Processed data not found in S3. Building from raw dataset...")
     # Download raw data from raw bucket
     raw_bucket = "product-delivery-eta-raw-data"
     local_dir = "/tmp/raw"
@@ -92,7 +92,7 @@ except Exception as e:
     # Save + upload
     merged_df.to_csv(local_path,index=False)
     s3.upload_file(local_path, bucket_processed, key_processed)
-    print("✅ Processed data built & uploaded to S3")
+    print("Processed data built & uploaded to S3")
     df = merged_df
 
 def train_model(df):
@@ -173,19 +173,19 @@ def train_model(df):
                                 version=model_version.version,
                                 stage="Staging"
                             )
-                            print(f"✅ Model v{model_version.version} promoted to Staging")
+                            print(f"Model v{model_version.version} promoted to Staging")
                     except Exception as e:
-                        print(f"⚠️ Model promotion failed: {e}")
+                        print(f"Model promotion failed: {e}")
             except Exception as e:
-                print(f"⚠️ MLflow logging failed: {e}")
-                print("🔄 Continuing without MLflow...")
+                print(f"MLflow logging failed: {e}")
+                print("Continuing without MLflow...")
         
         # Always save model locally as backup
         local_model_dir = "./models"
         os.makedirs(local_model_dir, exist_ok=True)
         model_path = os.path.join(local_model_dir, "latest_model.joblib")
         joblib.dump(model, model_path)
-        print(f"💾 Model saved locally: {model_path}")
+        print(f"Model saved locally: {model_path}")
         
     else:
         # Local training: Use file-based MLflow logging to avoid S3 issues
@@ -205,17 +205,17 @@ def train_model(df):
                 # Register model manually
                 try:
                     mlflow.register_model(f"file://{os.path.abspath(model_path)}", "delivery-eta-model")
-                    print(f"✅ Model registered: delivery-eta-model")
+                    print(f"Model registered: delivery-eta-model")
                 except Exception as e:
-                    print(f"⚠️ Model registration failed: {e}")
+                    print(f"Model registration failed: {e}")
         else:
             # No MLflow, save locally
             model_path = "./models/latest_model.joblib"
             os.makedirs(os.path.dirname(model_path), exist_ok=True)
             joblib.dump(model, model_path)
-            print(f"💾 Model saved locally: {model_path}")
+            print(f"Model saved locally: {model_path}")
     
-    print(f"✅ Training complete: RMSE={rmse:.4f}, MAE={mae:.4f}")
+    print(f"Training complete: RMSE={rmse:.4f}, MAE={mae:.4f}")
     return model, rmse, mae
 
 if __name__ == "__main__":

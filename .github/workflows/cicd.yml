@@ -39,38 +39,38 @@ jobs:
         pip install --upgrade pip
         pip install -r requirements.txt
 
-    - name: 🧪 Test Pipeline Prerequisites
+    - name: Test Pipeline Prerequisites
       run: |
-        echo "🧪 Testing MLflow and AWS connectivity..."
-        python test_pipeline.py || echo "⚠️ Some tests failed, but continuing pipeline..."
-        echo "✅ Prerequisites check completed"
+        echo "Testing MLflow and AWS connectivity..."
+        python test_pipeline.py || echo "Some tests failed, but continuing pipeline..."
+        echo "Prerequisites check completed"
 
-    - name: 🤖 Train Model
+    - name: Train Model
       run: |
-        echo "🚀 Starting training with MLflow tracking..."
+        echo "Starting training with MLflow tracking..."
         python scripts/train.py
-        echo "✅ Training completed"
+        echo "Training completed"
 
-    - name: 🔍 Evaluate Champion vs Challenger  
+    - name: Evaluate Champion vs Challenger  
       run: |
-        echo "🔍 Evaluating models..."
-        python scripts/evaluate.py || echo "⚠️ Evaluation failed but continuing"
-        echo "✅ Evaluation completed"
+        echo "Evaluating models..."
+        python scripts/evaluate.py || echo "Evaluation failed but continuing"
+        echo "Evaluation completed"
 
-    - name: 🚀 Deploy Champion to SageMaker
+    - name: Deploy Champion to SageMaker
       run: |
-        echo "🚀 Deploying to SageMaker..."
+        echo "Deploying to SageMaker..."
         if python scripts/deploy.py; then
-          echo "✅ MLflow-based deployment completed"
+          echo "MLflow-based deployment completed"
         else
-          echo "⚠️ MLflow deployment failed, trying backup deployment..."
+          echo "MLflow deployment failed, trying backup deployment..."
           python scripts/deploy_backup.py
-          echo "✅ Backup deployment completed"
+          echo "Backup deployment completed"
         fi
     
-    - name: 🧪 Test Deployed Model
+    - name: Test Deployed Model
       run: |
-        echo "🧪 Testing deployed model..."
+        echo "Testing deployed model..."
         sleep 30  # Wait for endpoint to be ready
         python test_api.py
-        echo "✅ Model testing completed"
+        echo "Model testing completed"

@@ -27,8 +27,8 @@ def test_sagemaker_endpoint():
             # Try JSON first (for scikit-learn container)
             payload = json.dumps(test_data)
             
-            print(f"🗺 Test Data: {test_data}")
-            print(f"🚀 Invoking endpoint: {endpoint_name} (JSON)")
+            print(f"Test Data: {test_data}")
+            print(f"Invoking endpoint: {endpoint_name} (JSON)")
             
             response = runtime.invoke_endpoint(
                 EndpointName=endpoint_name,
@@ -37,11 +37,11 @@ def test_sagemaker_endpoint():
             )
             
             result = json.loads(response['Body'].read().decode())
-            print(f"✅ JSON prediction successful!")
-            print(f"📊 Predicted delivery time: {result['predictions'][0]:.2f} days")
+            print(f"JSON prediction successful!")
+            print(f"Predicted delivery time: {result['predictions'][0]:.2f} days")
             
         except Exception as json_error:
-            print(f"⚠️ JSON failed: {json_error}")
+            print(f"JSON failed: {json_error}")
             print("Trying CSV format...")
             
             # Try CSV format (for XGBoost container)
@@ -56,13 +56,13 @@ def test_sagemaker_endpoint():
             )
             
             result = response["Body"].read().decode("utf-8").strip()
-            print(f"✅ CSV prediction successful!")
-            print(f"📊 Predicted delivery time: {float(result):.2f} days")
+            print(f"CSV prediction successful!")
+            print(f"Predicted delivery time: {float(result):.2f} days")
         
         return True
         
     except Exception as e:
-        print(f"❌ Endpoint test failed: {str(e)}")
+        print(f"Endpoint test failed: {str(e)}")
         return False
 
 def test_local_model():
@@ -80,19 +80,19 @@ def test_local_model():
             
             prediction = model.predict(test_df)
             
-            print(f"✅ Local model test successful!")
-            print(f"📊 Local prediction: {prediction[0]:.2f} days")
+            print(f"Local model test successful!")
+            print(f"Local prediction: {prediction[0]:.2f} days")
             return True
         else:
-            print(f"⚠️ No local model found at {model_path}")
+            print(f"No local model found at {model_path}")
             return False
             
     except Exception as e:
-        print(f"❌ Local model test failed: {str(e)}")
+        print(f"Local model test failed: {str(e)}")
         return False
 
 if __name__ == "__main__":
-    print("🧪 Testing Model Predictions")
+    print("Testing Model Predictions")
     print("=" * 40)
     
     # Test local model first
@@ -104,6 +104,6 @@ if __name__ == "__main__":
     
     print("\n" + "=" * 40)
     if local_ok or endpoint_ok:
-        print("🎉 Model testing completed successfully!")
+        print("Model testing completed successfully!")
     else:
-        print("❌ All model tests failed")
+        print("All model tests failed")

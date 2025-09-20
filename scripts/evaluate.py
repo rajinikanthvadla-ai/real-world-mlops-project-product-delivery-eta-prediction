@@ -13,11 +13,11 @@ def evaluate_models():
         try:
             all_versions = client.get_latest_versions("delivery-eta-model")
             if not all_versions:
-                print("⚠️ No models found in registry. Skipping evaluation.")
+                print("No models found in registry. Skipping evaluation.")
                 return
         except Exception as e:
-            print(f"⚠️ Model registry not accessible: {e}")
-            print("💡 This is normal for the first run. Skipping evaluation.")
+            print(f"Model registry not accessible: {e}")
+            print("This is normal for the first run. Skipping evaluation.")
             return
         
         # Download test data
@@ -35,7 +35,7 @@ def evaluate_models():
             staging_versions = client.get_latest_versions("delivery-eta-model", ["Staging"])
             
             if not prod_versions and not staging_versions:
-                print("⚠️ No Production or Staging models found.")
+                print("No Production or Staging models found.")
                 # Promote latest model to Staging if available
                 latest_versions = client.get_latest_versions("delivery-eta-model")
                 if latest_versions:
@@ -43,7 +43,7 @@ def evaluate_models():
                     client.transition_model_version_stage(
                         "delivery-eta-model", version, "Staging"
                     )
-                    print(f"✅ Promoted model version {version} to Staging")
+                    print(f"Promoted model version {version} to Staging")
                 return
             
             if prod_versions and staging_versions:
@@ -55,17 +55,17 @@ def evaluate_models():
                 prod_rmse = mean_squared_error(y,pr,squared=False)
                 stag_rmse = mean_squared_error(y,sr,squared=False)
                 
-                print(f"📊 Production RMSE: {prod_rmse:.4f}")
-                print(f"📊 Staging RMSE: {stag_rmse:.4f}")
+                print(f"Production RMSE: {prod_rmse:.4f}")
+                print(f"Staging RMSE: {stag_rmse:.4f}")
                 
                 if stag_rmse < prod_rmse:
                     ver = staging_versions[0].version
                     client.transition_model_version_stage(
                         "delivery-eta-model",ver,"Production",archive_existing_versions=True
                     )
-                    print(f"✅ Promoted staging v{ver} → Production (Better RMSE: {stag_rmse:.4f})")
+                    print(f"Promoted staging v{ver} to Production (Better RMSE: {stag_rmse:.4f})")
                 else:
-                    print("⚠️ Keeping current Production model (Better performance)")
+                    print("Keeping current Production model (Better performance)")
             
             elif staging_versions and not prod_versions:
                 # Promote Staging to Production if no Production exists
@@ -73,15 +73,15 @@ def evaluate_models():
                 client.transition_model_version_stage(
                     "delivery-eta-model",ver,"Production"
                 )
-                print(f"✅ Promoted staging v{ver} → Production (No existing Production model)")
+                print(f"Promoted staging v{ver} to Production (No existing Production model)")
             
         except Exception as model_error:
-            print(f"⚠️ Model evaluation failed: {model_error}")
-            print("💡 This might be due to model artifacts not being accessible")
+            print(f"Model evaluation failed: {model_error}")
+            print("This might be due to model artifacts not being accessible")
     
     except Exception as e:
-        print(f"⚠️ Evaluation process failed: {e}")
-        print("🔄 Continuing pipeline...")
+        print(f"Evaluation process failed: {e}")
+        print("Continuing pipeline...")
 
 if __name__ == "__main__":
     evaluate_models()

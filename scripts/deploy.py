@@ -29,16 +29,16 @@ def deploy_production_model():
             # Get Production model from MLflow
             prod_versions = client.get_latest_versions("delivery-eta-model", ["Production"])
         except Exception as registry_error:
-            print(f"⚠️ Model registry not accessible: {registry_error}")
-            print("💡 No models in registry. Use backup deployment instead.")
+            print(f"Model registry not accessible: {registry_error}")
+            print("No models in registry. Use backup deployment instead.")
             return False
             
         if not prod_versions:
-            print("⚠️ No Production model found. Checking for Staging model...")
+            print("No Production model found. Checking for Staging model...")
             staging_versions = client.get_latest_versions("delivery-eta-model", ["Staging"])
             if not staging_versions:
-                print("❌ No models found in Staging or Production")
-                print("💡 Use backup deployment with local model instead.")
+                print("No models found in Staging or Production")
+                print("Use backup deployment with local model instead.")
                 return False
             model_version = staging_versions[0]
             # Promote to Production
@@ -47,11 +47,11 @@ def deploy_production_model():
                 model_version.version, 
                 "Production"
             )
-            print(f"✅ Promoted Staging v{model_version.version} to Production")
+            print(f"Promoted Staging v{model_version.version} to Production")
         else:
             model_version = prod_versions[0]
         
-        print(f"📦 Deploying model version {model_version.version} to SageMaker...")
+        print(f"Deploying model version {model_version.version} to SageMaker...")
         
         # Download model artifacts
         local_path = "/tmp/mlflow_model"
@@ -104,32 +104,32 @@ def deploy_production_model():
         existing_endpoints = sm.list_endpoints(NameContains=endpoint_name)["Endpoints"]
         
         if existing_endpoints:
-            print(f"📝 Updating existing endpoint: {endpoint_name}")
+            print(f"Updating existing endpoint: {endpoint_name}")
             sm.update_endpoint(
                 EndpointName=endpoint_name,
                 EndpointConfigName=config_name
             )
         else:
-            print(f"🚀 Creating new endpoint: {endpoint_name}")
+            print(f"Creating new endpoint: {endpoint_name}")
             sm.create_endpoint(
                 EndpointName=endpoint_name,
                 EndpointConfigName=config_name
             )
         
         # Wait for deployment
-        print("⏳ Waiting for endpoint deployment...")
+        print("Waiting for endpoint deployment...")
         waiter = sm.get_waiter('endpoint_in_service')
         waiter.wait(EndpointName=endpoint_name)
         
-        print(f"✅ Model v{model_version.version} deployed to SageMaker endpoint: {endpoint_name}")
+        print(f"Model v{model_version.version} deployed to SageMaker endpoint: {endpoint_name}")
         return True
         
     except Exception as e:
-        print(f"❌ Deployment failed: {str(e)}")
+        print(f"Deployment failed: {str(e)}")
         return False
 
 if __name__ == "__main__":
     success = deploy_production_model()
     if not success:
-        print("⚠️ MLflow deployment failed - use backup deployment")
+        print("MLflow deployment failed - use backup deployment")
         exit(1)
