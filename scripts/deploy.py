@@ -1,36 +1,123 @@
 import boto3, mlflow, os, time
+import sagemaker
+from sagemaker.model import Model
+from sagemaker.predictor import Predictor
 
 MLFLOW_TRACKING_URI="http://13.127.63.212:32001/"
 mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
 client=mlflow.tracking.MlflowClient()
 
 sm=boto3.client("sagemaker",region_name="ap-south-1")
-account=boto3.client("sts").get_caller_identity()["Account"]
-role=f"arn:aws:iam::{account}:role/service-role/AmazonSageMaker-ExecutionRole"
+sagemaker_session = sagemaker.Session()
+
+# Handle role detection for different environments
+try:
+    role = sagemaker.get_execution_role()  # Works in SageMaker
+except ValueError:
+    # GitHub Actions or local environment
+    account = boto3.client("sts").get_caller_identity()["Account"]
+    role = f"arn:aws:iam::{account}:role/service-role/AmazonSageMaker-ExecutionRole"
+    print(f"🔧 Using IAM role: {role}")
 bucket="product-delivery-eta-model-artifacts"
-endpoint="delivery-eta-endpoint"
+endpoint_name="delivery-eta-endpoint"
 
-# Export latest Production model
-ver=client.get_latest_versions("delivery-eta-model",["Production"])[0]
-local="/tmp/mlflow_model"
-mlflow.pyfunc.download_artifacts(artifact_uri=ver.source,dst_path=local)
+def deploy_production_model():
+    """Deploy the Production model from MLflow to SageMaker"""
+    try:
+        # Get Production model from MLflow
+        prod_versions = client.get_latest_versions("delivery-eta-model", ["Production"])
+        if not prod_versions:
+            print("⚠️ No Production model found. Deploying latest Staging model...")
+            staging_versions = client.get_latest_versions("delivery-eta-model", ["Staging"])
+            if not staging_versions:
+                print("❌ No models found in Staging or Production")
+                return
+            model_version = staging_versions[0]
+            # Promote to Production
+            client.transition_model_version_stage(
+                "delivery-eta-model", 
+                model_version.version, 
+                "Production"
+            )
+        else:
+            model_version = prod_versions[0]
+        
+        print(f"📦 Deploying model version {model_version.version} to SageMaker...")
+        
+        # Download model artifacts
+        local_path = "/tmp/mlflow_model"
+        os.makedirs(local_path, exist_ok=True)
+        mlflow.artifacts.download_artifacts(
+            artifact_uri=model_version.source,
+            dst_path=local_path
+        )
+        
+        # Create model tarball
+        os.system(f"tar -czf /tmp/model.tar.gz -C {local_path} .")
+        
+        # Upload to S3
+        s3_model_path = f"s3://{bucket}/models/delivery-eta-v{model_version.version}/model.tar.gz"
+        boto3.client("s3").upload_file("/tmp/model.tar.gz", bucket, f"models/delivery-eta-v{model_version.version}/model.tar.gz")
+        
+        # Create SageMaker model
+        model_name = f"delivery-eta-model-v{model_version.version}-{int(time.time())}"
+        container_image = "683313688378.dkr.ecr.ap-south-1.amazonaws.com/sagemaker-xgboost:1.7-1"
+        
+        sm.create_model(
+            ModelName=model_name,
+            PrimaryContainer={
+                "Image": container_image,
+                "ModelDataUrl": s3_model_path,
+                "Environment": {
+                    "SAGEMAKER_PROGRAM": "inference.py",
+                    "SAGEMAKER_SUBMIT_DIRECTORY": "/opt/ml/code"
+                }
+            },
+            ExecutionRoleArn=role
+        )
+        
+        # Create endpoint configuration
+        config_name = f"{model_name}-config"
+        sm.create_endpoint_config(
+            EndpointConfigName=config_name,
+            ProductionVariants=[
+                {
+                    "VariantName": "AllTraffic",
+                    "ModelName": model_name,
+                    "InitialInstanceCount": 1,
+                    "InstanceType": "ml.t2.medium",  # Cost-effective for demo
+                    "InitialVariantWeight": 1.0
+                }
+            ]
+        )
+        
+        # Deploy or update endpoint
+        existing_endpoints = sm.list_endpoints(NameContains=endpoint_name)["Endpoints"]
+        
+        if existing_endpoints:
+            print(f"📝 Updating existing endpoint: {endpoint_name}")
+            sm.update_endpoint(
+                EndpointName=endpoint_name,
+                EndpointConfigName=config_name
+            )
+        else:
+            print(f"🚀 Creating new endpoint: {endpoint_name}")
+            sm.create_endpoint(
+                EndpointName=endpoint_name,
+                EndpointConfigName=config_name
+            )
+        
+        # Wait for deployment
+        print("⏳ Waiting for endpoint deployment...")
+        waiter = sm.get_waiter('endpoint_in_service')
+        waiter.wait(EndpointName=endpoint_name)
+        
+        print(f"✅ Model v{model_version.version} deployed to SageMaker endpoint: {endpoint_name}")
+        return endpoint_name
+        
+    except Exception as e:
+        print(f"❌ Deployment failed: {str(e)}")
+        raise
 
-os.system(f"tar -czf /tmp/model.tar.gz -C {local} .")
-boto3.client("s3").upload_file("/tmp/model.tar.gz",bucket,"mlflow_model.tar.gz")
-model_url=f"s3://{bucket}/mlflow_model.tar.gz"
-
-# Create Model + EndpointConfig
-mname=f"eta-model-{int(time.time())}"
-cname=f"{mname}-config"
-sm.create_model(ModelName=mname,
-    PrimaryContainer={"Image":"683313688378.dkr.ecr.ap-south-1.amazonaws.com/sagemaker-xgboost:1.7-1","ModelDataUrl":model_url},
-    ExecutionRoleArn=role)
-sm.create_endpoint_config(EndpointConfigName=cname,
-    ProductionVariants=[{"VariantName":"All","ModelName":mname,"InitialInstanceCount":1,"InstanceType":"ml.m5.large"}])
-
-# Update or Create Endpoint
-eps=sm.list_endpoints(NameContains=endpoint)["Endpoints"]
-if eps: sm.update_endpoint(EndpointName=endpoint,EndpointConfigName=cname)
-else: sm.create_endpoint(EndpointName=endpoint,EndpointConfigName=cname)
-
-print(f"✅ Deployed Champion model to SageMaker Endpoint: {endpoint}")
+if __name__ == "__main__":
+    deploy_production_model()

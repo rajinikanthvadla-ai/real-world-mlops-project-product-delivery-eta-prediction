@@ -6,3 +6,5 @@ xgboost==1.7.5
 scikit-learn==1.2.2
 geopy==2.3.0
 evidently==0.4.8
+sagemaker>=2.190.0
+joblib==1.2.0
