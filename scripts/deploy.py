@@ -169,24 +169,30 @@ def output_fn(prediction, content_type):
                         break
                     _t.sleep(10)
                 print(f"Creating new endpoint: {endpoint_name}")
+                unique_cfg = f"{endpoint_name}-cfg-{int(time.time())}"
                 skl_model.deploy(
                     initial_instance_count=1,
                     instance_type='ml.m5.large',
-                    endpoint_name=endpoint_name
+                    endpoint_name=endpoint_name,
+                    endpoint_config_name=unique_cfg
                 )
             else:
                 print(f"Updating existing endpoint: {endpoint_name}")
+                unique_cfg = f"{endpoint_name}-cfg-{int(time.time())}"
                 skl_model.deploy(
                     initial_instance_count=1,
                     instance_type='ml.m5.large',
-                    endpoint_name=endpoint_name
+                    endpoint_name=endpoint_name,
+                    endpoint_config_name=unique_cfg
                 )
         else:
             print(f"Creating new endpoint: {endpoint_name}")
+            unique_cfg = f"{endpoint_name}-cfg-{int(time.time())}"
             skl_model.deploy(
                 initial_instance_count=1,
                 instance_type='ml.m5.large',
-                endpoint_name=endpoint_name
+                endpoint_name=endpoint_name,
+                endpoint_config_name=unique_cfg
             )
         
         # Wait for deployment

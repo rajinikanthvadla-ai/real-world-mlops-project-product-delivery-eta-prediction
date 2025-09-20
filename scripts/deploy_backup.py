@@ -172,24 +172,30 @@ def deploy_local_model():
                         break
                     _t.sleep(10)
                 print(f"Creating endpoint: {endpoint_name}")
+                unique_cfg = f"{endpoint_name}-cfg-{int(time.time())}"
                 xgb_model.deploy(
                     initial_instance_count=1,
                     instance_type="ml.m5.large",
-                    endpoint_name=endpoint_name
+                    endpoint_name=endpoint_name,
+                    endpoint_config_name=unique_cfg
                 )
             else:
                 print(f"Updating endpoint: {endpoint_name}")
+                unique_cfg = f"{endpoint_name}-cfg-{int(time.time())}"
                 xgb_model.deploy(
                     initial_instance_count=1,
                     instance_type="ml.m5.large",
-                    endpoint_name=endpoint_name
+                    endpoint_name=endpoint_name,
+                    endpoint_config_name=unique_cfg
                 )
         else:
             print(f"Creating endpoint: {endpoint_name}")
+            unique_cfg = f"{endpoint_name}-cfg-{int(time.time())}"
             xgb_model.deploy(
                 initial_instance_count=1,
                 instance_type="ml.m5.large",
-                endpoint_name=endpoint_name
+                endpoint_name=endpoint_name,
+                endpoint_config_name=unique_cfg
             )
         
         print(f"Backup model deployed to SageMaker endpoint: {endpoint_name}")
