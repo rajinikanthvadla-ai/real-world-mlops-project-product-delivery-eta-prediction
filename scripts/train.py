@@ -10,17 +10,33 @@ IS_GITHUB_ACTIONS = 'GITHUB_ACTIONS' in os.environ
 
 # MLflow configuration
 MLFLOW_TRACKING_URI = os.environ.get('MLFLOW_TRACKING_URI', "http://13.127.63.212:32001/")
-mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
 
-if IS_SAGEMAKER:
-    mlflow.set_experiment("sagemaker-delivery-eta-prediction")
-elif IS_GITHUB_ACTIONS:
-    mlflow.set_experiment("github-actions-delivery-eta-prediction")
-else:
-    mlflow.set_experiment("delivery-eta-prediction")
+try:
+    mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
+    
+    if IS_SAGEMAKER:
+        mlflow.set_experiment("sagemaker-delivery-eta-prediction")
+    elif IS_GITHUB_ACTIONS:
+        mlflow.set_experiment("github-actions-delivery-eta-prediction")
+    else:
+        mlflow.set_experiment("delivery-eta-prediction")
+    
+    # Test MLflow connectivity
+    client = mlflow.tracking.MlflowClient()
+    try:
+        experiments = client.search_experiments()
+    except AttributeError:
+        experiments = client.list_experiments() 
+    
+    MLFLOW_AVAILABLE = True
+    print(f"✅ MLflow connected: {MLFLOW_TRACKING_URI}")
+except Exception as e:
+    print(f"⚠️ MLflow connection failed: {e}")
+    print(f"🔄 Continuing without MLflow tracking...")
+    MLFLOW_AVAILABLE = False
 
 print(f"🔧 Environment: {'SageMaker' if IS_SAGEMAKER else 'GitHub Actions' if IS_GITHUB_ACTIONS else 'Local'}")
-print(f"🔧 MLflow URI: {MLFLOW_TRACKING_URI}")
+print(f"🔧 MLflow Tracking: {'Enabled' if MLFLOW_AVAILABLE else 'Disabled'}")
 
 s3 = boto3.client("s3")
 bucket_processed = "product-delivery-eta-processed-data"
@@ -110,74 +126,95 @@ def train_model(df):
         joblib.dump(model, os.path.join(model_dir, 'model.joblib'))
         
         # Log to MLflow (with SageMaker integration)
-        with mlflow.start_run() as run:
-            mlflow.log_params(params)
-            mlflow.log_metrics({"rmse":rmse,"mae":mae})
-            mlflow.sklearn.log_model(model, "model", registered_model_name="delivery-eta-model")
-            
-            # Promote to Staging for evaluation
-            client = mlflow.tracking.MlflowClient()
-            model_version = client.get_latest_versions("delivery-eta-model", stages=["None"])[0]
-            client.transition_model_version_stage(
-                name="delivery-eta-model",
-                version=model_version.version,
-                stage="Staging"
-            )
+        if MLFLOW_AVAILABLE:
+            with mlflow.start_run() as run:
+                mlflow.log_params(params)
+                mlflow.log_metrics({"rmse":rmse,"mae":mae})
+                mlflow.sklearn.log_model(model, "model", registered_model_name="delivery-eta-model")
+                
+                # Promote to Staging for evaluation
+                client = mlflow.tracking.MlflowClient()
+                model_version = client.get_latest_versions("delivery-eta-model", stages=["None"])[0]
+                client.transition_model_version_stage(
+                    name="delivery-eta-model",
+                    version=model_version.version,
+                    stage="Staging"
+                )
     elif IS_GITHUB_ACTIONS:
         # GitHub Actions: Log directly to MLflow server without S3 artifacts
-        with mlflow.start_run() as run:
-            mlflow.log_params(params)
-            mlflow.log_metrics({"rmse":rmse,"mae":mae})
-            
-            # Create a simple model signature
-            from mlflow.models.signature import infer_signature
-            signature = infer_signature(X_train, model.predict(X_train))
-            
-            # Log model without storing large artifacts to S3
-            mlflow.xgboost.log_model(
-                model, 
-                "model",
-                signature=signature,
-                registered_model_name="delivery-eta-model",
-                # Use local artifact store to avoid S3 permissions
-                artifact_path="model"
-            )
-            
-            # Promote to Staging automatically for GitHub Actions
+        if MLFLOW_AVAILABLE:
             try:
-                client = mlflow.tracking.MlflowClient()
-                # Get the latest version we just created
-                latest_versions = client.get_latest_versions("delivery-eta-model", stages=["None"])
-                if latest_versions:
-                    model_version = latest_versions[0]
-                    client.transition_model_version_stage(
-                        name="delivery-eta-model",
-                        version=model_version.version,
-                        stage="Staging"
+                with mlflow.start_run() as run:
+                    mlflow.log_params(params)
+                    mlflow.log_metrics({"rmse":rmse,"mae":mae})
+                    
+                    # Create a simple model signature
+                    from mlflow.models.signature import infer_signature
+                    signature = infer_signature(X_train, model.predict(X_train))
+                    
+                    # Log model without storing large artifacts to S3
+                    mlflow.xgboost.log_model(
+                        model, 
+                        "model",
+                        signature=signature,
+                        registered_model_name="delivery-eta-model",
+                        # Use local artifact store to avoid S3 permissions
+                        artifact_path="model"
                     )
-                    print(f"✅ Model v{model_version.version} promoted to Staging")
+                    
+                    # Promote to Staging automatically for GitHub Actions
+                    try:
+                        client = mlflow.tracking.MlflowClient()
+                        # Get the latest version we just created
+                        latest_versions = client.get_latest_versions("delivery-eta-model", stages=["None"])
+                        if latest_versions:
+                            model_version = latest_versions[0]
+                            client.transition_model_version_stage(
+                                name="delivery-eta-model",
+                                version=model_version.version,
+                                stage="Staging"
+                            )
+                            print(f"✅ Model v{model_version.version} promoted to Staging")
+                    except Exception as e:
+                        print(f"⚠️ Model promotion failed: {e}")
             except Exception as e:
-                print(f"⚠️ Model promotion failed: {e}")
+                print(f"⚠️ MLflow logging failed: {e}")
+                print("🔄 Continuing without MLflow...")
+        
+        # Always save model locally as backup
+        local_model_dir = "./models"
+        os.makedirs(local_model_dir, exist_ok=True)
+        model_path = os.path.join(local_model_dir, "latest_model.joblib")
+        joblib.dump(model, model_path)
+        print(f"💾 Model saved locally: {model_path}")
+        
     else:
         # Local training: Use file-based MLflow logging to avoid S3 issues
         local_mlflow_dir = "./mlruns"
         os.makedirs(local_mlflow_dir, exist_ok=True)
         
-        with mlflow.start_run() as run:
-            mlflow.log_params(params)
-            mlflow.log_metrics({"rmse":rmse,"mae":mae})
-            
-            # Save model locally instead of trying to upload to S3
-            model_path = f"./models/delivery-eta-model-{run.info.run_id}"
+        if MLFLOW_AVAILABLE:
+            with mlflow.start_run() as run:
+                mlflow.log_params(params)
+                mlflow.log_metrics({"rmse":rmse,"mae":mae})
+                
+                # Save model locally instead of trying to upload to S3
+                model_path = f"./models/delivery-eta-model-{run.info.run_id}"
+                os.makedirs(os.path.dirname(model_path), exist_ok=True)
+                mlflow.xgboost.save_model(model, model_path)
+                
+                # Register model manually
+                try:
+                    mlflow.register_model(f"file://{os.path.abspath(model_path)}", "delivery-eta-model")
+                    print(f"✅ Model registered: delivery-eta-model")
+                except Exception as e:
+                    print(f"⚠️ Model registration failed: {e}")
+        else:
+            # No MLflow, save locally
+            model_path = "./models/latest_model.joblib"
             os.makedirs(os.path.dirname(model_path), exist_ok=True)
-            mlflow.xgboost.save_model(model, model_path)
-            
-            # Register model manually
-            try:
-                mlflow.register_model(f"file://{os.path.abspath(model_path)}", "delivery-eta-model")
-                print(f"✅ Model registered: delivery-eta-model")
-            except Exception as e:
-                print(f"⚠️ Model registration failed: {e}")
+            joblib.dump(model, model_path)
+            print(f"💾 Model saved locally: {model_path}")
     
     print(f"✅ Training complete: RMSE={rmse:.4f}, MAE={mae:.4f}")
     return model, rmse, mae

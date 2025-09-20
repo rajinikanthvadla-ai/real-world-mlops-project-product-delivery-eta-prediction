@@ -15,15 +15,31 @@ def test_mlflow_connection():
         mlflow_uri = os.environ.get('MLFLOW_TRACKING_URI', 'http://13.127.63.212:32001/')
         mlflow.set_tracking_uri(mlflow_uri)
         
-        # Try to list experiments
+        # Try to connect and get server info
         client = mlflow.tracking.MlflowClient()
-        experiments = client.list_experiments()
         
-        print(f"✅ MLflow connection successful to {mlflow_uri}")
-        print(f"📊 Found {len(experiments)} experiments")
+        # Test basic connectivity by searching experiments
+        try:
+            experiments = client.search_experiments()
+            print(f"✅ MLflow connection successful to {mlflow_uri}")
+            print(f"📊 Found {len(experiments)} experiments")
+        except AttributeError:
+            # Fallback for older MLflow versions
+            experiments = client.list_experiments()
+            print(f"✅ MLflow connection successful to {mlflow_uri}")
+            print(f"📊 Found {len(experiments)} experiments")
+        
+        # Test creating a test run to verify full functionality
+        with mlflow.start_run(run_name="connectivity_test") as run:
+            mlflow.log_param("test_param", "test_value")
+            mlflow.log_metric("test_metric", 1.0)
+            print(f"🔬 Test run created: {run.info.run_id}")
+        
         return True
     except Exception as e:
         print(f"❌ MLflow connection failed: {str(e)}")
+        print(f"🔍 MLflow URI: {mlflow_uri}")
+        print(f"💡 Tip: Check if MLflow server is running and accessible")
         return False
 
 def test_aws_credentials():
@@ -64,11 +80,15 @@ def main():
     aws_ok = test_aws_credentials()
     
     print("\n" + "=" * 50)
-    if mlflow_ok and aws_ok:
-        print("🎉 All tests passed! Pipeline should work correctly.")
+    if aws_ok:  # AWS is critical, MLflow can be optional for some workflows
+        if mlflow_ok:
+            print("🎉 All tests passed! Pipeline should work correctly.")
+        else:
+            print("⚠️ MLflow connection failed, but AWS works. Pipeline may work with limited functionality.")
+            print("💡 Consider running without MLflow tracking or fix MLflow server connection.")
         sys.exit(0)
     else:
-        print("❌ Some tests failed. Check your configuration.")
+        print("❌ AWS tests failed. Pipeline cannot work without AWS connectivity.")
         sys.exit(1)
 
 if __name__ == "__main__":
