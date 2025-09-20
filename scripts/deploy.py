@@ -10,15 +10,39 @@ client=mlflow.tracking.MlflowClient()
 sm=boto3.client("sagemaker",region_name="ap-south-1")
 sagemaker_session = sagemaker.Session()
 
-# Handle role detection for different environments
-try:
-    role = sagemaker.get_execution_role()  # Works in SageMaker
-except ValueError:
-    # GitHub Actions or local environment
+def _resolve_sagemaker_role() -> str:
+    env_role = os.environ.get("SAGEMAKER_EXECUTION_ROLE_ARN")
+    if env_role:
+        print(f"Using IAM role from env: {env_role}")
+        return env_role
+    try:
+        return sagemaker.get_execution_role()
+    except Exception:
+        pass
+    try:
+        iam = boto3.client("iam")
+        marker = None
+        while True:
+            kwargs = {"Marker": marker} if marker else {}
+            resp = iam.list_roles(**kwargs)
+            for r in resp.get("Roles", []):
+                if r.get("RoleName", "").startswith("AmazonSageMaker-ExecutionRole"):
+                    print(f"Using discovered IAM role: {r['Arn']}")
+                    return r["Arn"]
+            if resp.get("IsTruncated"):
+                marker = resp.get("Marker")
+            else:
+                break
+    except Exception:
+        pass
     account = boto3.client("sts").get_caller_identity()["Account"]
-    role = f"arn:aws:iam::{account}:role/service-role/AmazonSageMaker-ExecutionRole"
-    print(f"Using IAM role: {role}")
-bucket="product-delivery-eta-model-artifacts"
+    fallback = f"arn:aws:iam::{account}:role/service-role/AmazonSageMaker-ExecutionRole"
+    print(f"Using fallback IAM role: {fallback}")
+    return fallback
+
+role = _resolve_sagemaker_role()
+# Use SageMaker default bucket to ensure access from the role
+bucket = sagemaker.Session().default_bucket()
 endpoint_name="delivery-eta-endpoint"
 
 def deploy_production_model():

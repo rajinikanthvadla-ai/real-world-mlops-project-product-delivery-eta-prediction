@@ -52,6 +52,46 @@ def output_fn(prediction, content_type):
         f.write(inference_code)
     print("Created XGBoost inference.py")
 
+def _resolve_sagemaker_role() -> str:
+    """Resolve an execution role ARN usable by SageMaker."""
+    # 1) Allow explicit override via env var
+    env_role = os.environ.get("SAGEMAKER_EXECUTION_ROLE_ARN")
+    if env_role:
+        print(f"Using IAM role from env: {env_role}")
+        return env_role
+    # 2) Try native helper when running inside SageMaker
+    try:
+        return sagemaker.get_execution_role()
+    except Exception:
+        pass
+    # 3) Try to find a role that looks like a SageMaker execution role
+    try:
+        iam = boto3.client("iam")
+        marker = None
+        candidates = []
+        while True:
+            kwargs = {"Marker": marker} if marker else {}
+            resp = iam.list_roles(**kwargs)
+            for r in resp.get("Roles", []):
+                name = r.get("RoleName", "")
+                if name.startswith("AmazonSageMaker-ExecutionRole"):
+                    candidates.append(r["Arn"])
+            if resp.get("IsTruncated"):
+                marker = resp.get("Marker")
+            else:
+                break
+        if candidates:
+            print(f"Using discovered IAM role: {candidates[0]}")
+            return candidates[0]
+    except Exception:
+        pass
+    # 4) Fallback to the default naming (may fail if it doesn't exist)
+    account = boto3.client("sts").get_caller_identity()["Account"]
+    fallback = f"arn:aws:iam::{account}:role/service-role/AmazonSageMaker-ExecutionRole"
+    print(f"Using fallback IAM role: {fallback}")
+    return fallback
+
+
 def deploy_local_model():
     """Deploy locally saved model to SageMaker"""
     
@@ -66,9 +106,9 @@ def deploy_local_model():
     
     # AWS setup
     sm = boto3.client("sagemaker", region_name="ap-south-1")
-    account = boto3.client("sts").get_caller_identity()["Account"]
-    role = f"arn:aws:iam::{account}:role/service-role/AmazonSageMaker-ExecutionRole"
-    bucket = "product-delivery-eta-model-artifacts"
+    role = _resolve_sagemaker_role()
+    # Use SageMaker default bucket to avoid cross-bucket permissions issues
+    bucket = sagemaker.Session().default_bucket()
     
     try:
         # Create model package

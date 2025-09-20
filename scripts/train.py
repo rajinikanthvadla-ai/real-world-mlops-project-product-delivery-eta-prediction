@@ -22,7 +22,18 @@ try:
     if IS_SAGEMAKER:
         mlflow.set_experiment("sagemaker-delivery-eta-prediction")
     elif IS_GITHUB_ACTIONS:
-        mlflow.set_experiment("github-actions-delivery-eta-prediction")
+        # Ensure experiment stores artifacts in our S3 bucket that GA can write to
+        desired_bucket = "product-delivery-eta-model-artifacts"
+        desired_prefix = "mlflow-artifacts"
+        desired_artifact_location = f"s3://{desired_bucket}/{desired_prefix}"
+        exp_name = "github-actions-delivery-eta-prediction-s3"
+        existing = mlflow.get_experiment_by_name(exp_name)
+        if not existing:
+            try:
+                mlflow.create_experiment(exp_name, artifact_location=desired_artifact_location)
+            except Exception as _:
+                pass
+        mlflow.set_experiment(exp_name)
     else:
         mlflow.set_experiment("delivery-eta-prediction")
     
