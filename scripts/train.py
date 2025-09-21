@@ -9,7 +9,7 @@ IS_SAGEMAKER = '/opt/ml' in os.getcwd() or 'SM_MODEL_DIR' in os.environ
 IS_GITHUB_ACTIONS = 'GITHUB_ACTIONS' in os.environ
 
 # MLflow configuration
-MLFLOW_TRACKING_URI = os.environ.get('MLFLOW_TRACKING_URI', "http://13.127.63.212:32001/")
+MLFLOW_TRACKING_URI = os.environ.get('MLFLOW_TRACKING_URI', "http://13.203.199.220:32001/")
 
 # In GitHub Actions, an empty MLFLOW_S3_ENDPOINT_URL can cause boto3 Invalid endpoint errors.
 # Sanitize by removing the env var if it's an empty string.

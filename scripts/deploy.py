@@ -4,7 +4,7 @@ from sagemaker.model import Model
 from sagemaker.predictor import Predictor
 from sagemaker.xgboost.model import XGBoostModel
 
-MLFLOW_TRACKING_URI="http://13.127.63.212:32001/"
+MLFLOW_TRACKING_URI="http://13.203.199.220:32001/"
 mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
 client=mlflow.tracking.MlflowClient()
 

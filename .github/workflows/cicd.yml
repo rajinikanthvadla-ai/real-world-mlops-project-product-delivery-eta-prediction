@@ -12,7 +12,7 @@ jobs:
   pipeline:
     runs-on: ubuntu-latest
     env:
-      MLFLOW_TRACKING_URI: http://13.127.63.212:32001/
+      MLFLOW_TRACKING_URI: http://13.203.199.220:32001/
       AWS_DEFAULT_REGION: ap-south-1
       SAGEMAKER_EXECUTION_ROLE_ARN: ${{ secrets.SAGEMAKER_EXECUTION_ROLE_ARN }}
     

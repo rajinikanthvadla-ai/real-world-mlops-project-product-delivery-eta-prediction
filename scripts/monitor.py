@@ -2,7 +2,7 @@ import pandas as pd, boto3, mlflow
 from evidently.report import Report
 from evidently.metric_preset import DataDriftPreset
 
-mlflow.set_tracking_uri("http://13.127.63.212:32001/")
+mlflow.set_tracking_uri("http://13.203.199.220:32001/")
 s3=boto3.client("s3")
 s3.download_file('product-delivery-eta-processed-data','processed_data.csv','/tmp/ref.csv')
 ref=pd.read_csv('/tmp/ref.csv')

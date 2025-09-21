@@ -12,7 +12,7 @@ import sys
 def test_mlflow_connection():
     """Test MLflow server connection"""
     try:
-        mlflow_uri = os.environ.get('MLFLOW_TRACKING_URI', 'http://13.127.63.212:32001/')
+        mlflow_uri = os.environ.get('MLFLOW_TRACKING_URI', 'http://13.203.199.220:32001/')
         mlflow.set_tracking_uri(mlflow_uri)
         
         # Try to connect and get server info

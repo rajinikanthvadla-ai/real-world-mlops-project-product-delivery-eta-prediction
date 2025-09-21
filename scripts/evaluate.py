@@ -2,7 +2,7 @@ import mlflow, pandas as pd, boto3
 from sklearn.metrics import mean_squared_error
 import os
 
-MLFLOW_TRACKING_URI = "http://13.127.63.212:32001/"
+MLFLOW_TRACKING_URI = "http://13.203.199.220:32001/"
 mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
 client = mlflow.tracking.MlflowClient()
 

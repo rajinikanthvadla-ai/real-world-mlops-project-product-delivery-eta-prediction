@@ -11,7 +11,7 @@ from sklearn.model_selection import train_test_split
 from mlflow.models.signature import infer_signature
 
 # Setup MLflow
-MLFLOW_TRACKING_URI = "http://13.127.63.212:32001/"
+MLFLOW_TRACKING_URI = "http://13.203.199.220:32001/"
 mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
 mlflow.set_experiment("test-model-registration")
 
