@@ -22,10 +22,25 @@ import numpy as np
 FEATURES = ['product_weight_g','product_volume_cm3','price','freight_value',
             'purchase_hour','purchase_day_of_week','purchase_month']
 
+def _find_model_file(model_dir):
+    for root, _, files in os.walk(model_dir):
+        if 'xgboost-model' in files:
+            return os.path.join(root, 'xgboost-model'), 'booster'
+        for name in ['model.joblib', 'model.pkl', 'model.bin']:
+            if name in files:
+                return os.path.join(root, name), 'joblib'
+    return None, None
+
 def model_fn(model_dir):
-    booster = xgb.Booster()
-    booster.load_model(os.path.join(model_dir, 'xgboost-model'))
-    return booster
+    path, kind = _find_model_file(model_dir)
+    if path is None:
+        raise FileNotFoundError(f'No supported model file found under {model_dir}')
+    if kind == 'booster':
+        booster = xgb.Booster()
+        booster.load_model(path)
+        return booster
+    import joblib
+    return joblib.load(path)
 
 def input_fn(request_body, request_content_type):
     if request_content_type == 'text/csv':
@@ -147,6 +162,9 @@ def deploy_local_model():
             sagemaker_session=sagemaker_session
         )
         
+        # Deploy endpoint
+        endpoint_name = "delivery-eta-endpoint"
+
         # Ensure stale default-named endpoint-config is removed to avoid name conflict
         try:
             sm.describe_endpoint_config(EndpointConfigName=endpoint_name)
@@ -154,9 +172,6 @@ def deploy_local_model():
             sm.delete_endpoint_config(EndpointConfigName=endpoint_name)
         except Exception:
             pass
-
-        # Deploy endpoint
-        endpoint_name = "delivery-eta-endpoint"
         existing_endpoints = sm.list_endpoints(NameContains=endpoint_name).get("Endpoints", [])
 
         def _get_status(name: str) -> str:
